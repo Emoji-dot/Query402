@@ -142,8 +142,7 @@ describe("fetchWithQuoteBoundPayment / runPaidQuery quote binding", () => {
       expiresAt: "2099-01-01T00:00:00.000Z"
     });
     const sign = vi.fn().mockResolvedValue({ "PAYMENT-SIGNATURE": "signed-fixture" });
-    let calls = 0;
-    const fetchStub = vi.fn(async (url: RequestInfo | URL) => {
+    const fetchStub = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
       const href = String(url);
       if (href.includes("/api/providers")) {
         return new Response(
@@ -153,8 +152,12 @@ describe("fetchWithQuoteBoundPayment / runPaidQuery quote binding", () => {
           { status: 200, headers: { "content-type": "application/json" } }
         );
       }
-      calls += 1;
-      if (calls === 1) {
+      // Model a real x402 server: answer 402 until the request carries a
+      // payment signature. The CLI probes the challenge once before signing
+      // (config validation) and once inside the quote-bound fetch, so both
+      // unanswered GETs must return the challenge.
+      const headers = new Headers(init?.headers);
+      if (!headers.get("PAYMENT-SIGNATURE")) {
         return challengeResponse(paymentRequired);
       }
       return new Response(JSON.stringify({ ok: true, result: { priceUsd: PRICE_USD } }), {
