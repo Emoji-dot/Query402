@@ -1,5 +1,5 @@
 import { nanoid } from "nanoid";
-import { HTTPFacilitatorClient } from "@x402/core/server";
+import { HTTPFacilitatorClient, getFacilitatorResponseError } from "@x402/core/server";
 import {
   paymentMiddlewareFromHTTPServer,
   x402HTTPResourceServer,
@@ -442,7 +442,22 @@ export function createX402Middleware() {
   });
 
   const httpServer = new x402HTTPResourceServer(resourceServer, routeConfig);
-  const paymentMiddleware = paymentMiddlewareFromHTTPServer(httpServer);
+  // The express adapter otherwise starts facilitator discovery at construction
+  // time and discards the returned promise, so an unavailable facilitator (or a
+  // missing API key) surfaces as an unhandled rejection instead of a handled
+  // error. Initialize on the first paid request instead.
+  const paymentMiddleware = paymentMiddlewareFromHTTPServer(
+    httpServer,
+    undefined,
+    undefined,
+    false
+  );
+
+  let facilitatorInitialization: Promise<void> | null = null;
+  const ensureFacilitatorInitialized = (): Promise<void> => {
+    facilitatorInitialization ??= httpServer.initialize();
+    return facilitatorInitialization;
+  };
 
   return async (req: Request, res: Response, next: NextFunction) => {
     if (isProtectedX402Route(req.path)) {
@@ -476,6 +491,19 @@ export function createX402Middleware() {
           errorCode: "invalid_payment_header",
           debug
         });
+      }
+
+      try {
+        await ensureFacilitatorInitialized();
+      } catch (error) {
+        // Allow the next paid request to retry discovery.
+        facilitatorInitialization = null;
+        // Report the facilitator failure exactly as the express adapter does.
+        const facilitatorError = getFacilitatorResponseError(error);
+        if (facilitatorError) {
+          return res.status(502).json({ error: facilitatorError.message });
+        }
+        return next(error);
       }
     }
 

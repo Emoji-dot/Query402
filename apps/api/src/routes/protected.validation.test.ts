@@ -53,7 +53,10 @@ describe("protected route validation and error handling", () => {
 
   afterEach(async () => {
     await resetApiTestStorage(analyticsDbPath, sponsorshipDbPath);
-    vi.restoreAllMocks();
+    // clearAllMocks (not restoreAllMocks) keeps the implementations installed by
+    // the vi.mock factories above; restoring them would make
+    // getResponseByPaymentProof() return undefined and crash the proof-replay path.
+    vi.clearAllMocks();
   });
 
   async function createValidationApp() {
@@ -160,7 +163,10 @@ describe("protected route validation and error handling", () => {
 
 describe("x402 payment debug metadata - helpers", () => {
   afterEach(() => {
-    vi.restoreAllMocks();
+    // clearAllMocks (not restoreAllMocks) keeps the implementations installed by
+    // the vi.mock factories above; restoring them would make
+    // getResponseByPaymentProof() return undefined and crash the proof-replay path.
+    vi.clearAllMocks();
   });
 
   it("computes payment header fingerprint without exposing original", async () => {
@@ -246,7 +252,10 @@ describe("x402 payment debug metadata - demo mode", () => {
 
   afterEach(async () => {
     await resetApiTestStorage(analyticsDbPath, sponsorshipDbPath);
-    vi.restoreAllMocks();
+    // clearAllMocks (not restoreAllMocks) keeps the implementations installed by
+    // the vi.mock factories above; restoring them would make
+    // getResponseByPaymentProof() return undefined and crash the proof-replay path.
+    vi.clearAllMocks();
   });
 
   async function createDemoDebugApp() {
@@ -451,7 +460,10 @@ describe("x402 payment header presence validation - non-demo routes", () => {
 
   afterEach(async () => {
     await resetApiTestStorage(analyticsDbPath, sponsorshipDbPath);
-    vi.restoreAllMocks();
+    // clearAllMocks (not restoreAllMocks) keeps the implementations installed by
+    // the vi.mock factories above; restoring them would make
+    // getResponseByPaymentProof() return undefined and crash the proof-replay path.
+    vi.clearAllMocks();
   });
 
   async function createHeaderValidationApp() {
