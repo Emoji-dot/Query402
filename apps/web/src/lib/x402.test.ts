@@ -51,6 +51,8 @@ function fakeWallet(): WalletSessionMachine {
   const state: WalletState = { status: "connected", address: PAYER };
   return {
     getState: () => state,
+    // The app configures the machine with the Stellar testnet passphrase.
+    getTargetNetworkPassphrase: () => "Test SDF Network ; September 2015",
     signAuthEntry: async (authEntryXdr: string) => ({
       signedAuthEntry: authEntryXdr,
       signerAddress: PAYER
