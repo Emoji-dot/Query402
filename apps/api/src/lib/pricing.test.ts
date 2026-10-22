@@ -68,12 +68,20 @@ describe("provider pricing", () => {
   });
 
   it("returns provider-specific prices for search, news, and scrape", () => {
-    expect(getProviderById("search.basic")?.priceUsd).toBe(Number(protectedRouteBasePrices["GET /x402/search"].slice(1)));
+    expect(getProviderById("search.basic")?.priceUsd).toBe(
+      Number(protectedRouteBasePrices["GET /x402/search"].slice(1))
+    );
     expect(getProviderById("search.pro")?.priceUsd).toBe(0.02);
-    expect(getProviderById("news.fast")?.priceUsd).toBe(Number(protectedRouteBasePrices["GET /x402/news"].slice(1)));
+    expect(getProviderById("news.fast")?.priceUsd).toBe(
+      Number(protectedRouteBasePrices["GET /x402/news"].slice(1))
+    );
     expect(getProviderById("news.deep")?.priceUsd).toBe(0.03);
-    expect(getProviderById("scrape.page")?.priceUsd).toBe(Number(protectedRouteBasePrices["GET /x402/scrape"].slice(1)));
-    expect(getProviderById("scrape.extract")?.priceUsd).toBe(Number(protectedRouteBasePrices["GET /x402/scrape"].slice(1)) * 2);
+    expect(getProviderById("scrape.page")?.priceUsd).toBe(
+      Number(protectedRouteBasePrices["GET /x402/scrape"].slice(1))
+    );
+    expect(getProviderById("scrape.extract")?.priceUsd).toBe(
+      Number(protectedRouteBasePrices["GET /x402/scrape"].slice(1)) * 2
+    );
   });
 
   it("formats dynamic provider prices consistently", async () => {
