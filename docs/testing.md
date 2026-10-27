@@ -18,6 +18,15 @@ npm run test:coverage
 
 Coverage output is written to `apps/api/coverage/`.
 
+## Static asset guard
+
+`scripts/check-static-assets.test.mjs` uses Node's built-in test runner and temporary directories. It does not read the repository logos. The guard enforces a 1 MB (1,048,576 byte) budget per file under `public/` and `apps/*/public/`, and checks PNG, JPEG, WebP, WOFF, and WOFF2 signatures. Run it before installing dependencies:
+
+```bash
+node --test scripts/check-static-assets.test.mjs
+node scripts/check-static-assets.mjs
+```
+
 ## What is covered
 
 - Shared Zod schemas and provider/category validation (`packages/shared`)

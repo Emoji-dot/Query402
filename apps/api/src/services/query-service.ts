@@ -25,7 +25,7 @@ function getErrorMessage(error: unknown): string {
   return String(error);
 }
 
-function sanitizeErrorMessage(message: string): string {
+export function sanitizeErrorMessage(message: string): string {
   return message
     .replace(/\b(url|targetUrl)\b\s*[:=]\s*("[^"]*"|'[^']*'|[^,;]+)/gi, "$1=[redacted-url]")
     .replace(

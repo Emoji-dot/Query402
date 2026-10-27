@@ -5,22 +5,22 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = process.cwd();
 
-export function findLeaks(content) {
+export function findLeaks(content, includedLines) {
   const leaks = [];
   const lines = content.split(/\r?\n/);
 
   for (let i = 0; i < lines.length; i++) {
+    if (includedLines && !includedLines.has(i)) {
+      continue;
+    }
     const line = lines[i];
     const lineNum = i + 1;
 
     // 1. Stellar secret key: S... followed by 55 alphanumeric chars
-    const secretKeyRegex = /\b(S[A-Z0-9]{55})\b/g;
+    const secretKeyRegex = /\bS[A-Z0-9]{55}\b/g;
     let match;
     while ((match = secretKeyRegex.exec(line)) !== null) {
-      const key = match[1];
-      if (!key.includes("XXXX")) {
-        leaks.push({ lineNum, pattern: "Stellar Secret Key", match: key });
-      }
+      leaks.push({ lineNum, pattern: "Stellar Secret Key" });
     }
 
     // 2. Private key block
@@ -218,6 +218,9 @@ async function getReviewerFacingFiles(baseDir = ROOT) {
     }
   }
 
+  files.push(path.join(baseDir, ".env.example"));
+  files.push(...(await walk(path.join(baseDir, ".github", "workflows"))));
+
   return files;
 }
 
@@ -226,14 +229,45 @@ export async function scanFilesForLeaks(files, baseDir = ROOT) {
 
   for (const file of files) {
     const content = await readFile(file, "utf8");
-    const leaks = findLeaks(content);
+    const relativePath = path.relative(baseDir, file).replaceAll("\\", "/");
+    const includedLines = relativePath.startsWith(".github/workflows/")
+      ? getWorkflowEnvLines(content)
+      : undefined;
+    const leaks = findLeaks(content, includedLines);
     if (leaks.length > 0) {
-      const relativePath = path.relative(baseDir, file).replaceAll("\\", "/");
       findings.push({ relativePath, leaks });
     }
   }
 
   return findings;
+}
+
+function getWorkflowEnvLines(content) {
+  const lines = content.split(/\r?\n/);
+  const envLines = new Set();
+
+  for (let i = 0; i < lines.length; i++) {
+    const match = /^(\s*)env\s*:\s*(.*)$/.exec(lines[i]);
+    if (!match) {
+      continue;
+    }
+
+    const indentation = match[1].length;
+    envLines.add(i);
+
+    for (let j = i + 1; j < lines.length; j++) {
+      const line = lines[j];
+      if (!line.trim() || line.trimStart().startsWith("#")) {
+        continue;
+      }
+      if (line.match(/^\s*/)[0].length <= indentation) {
+        break;
+      }
+      envLines.add(j);
+    }
+  }
+
+  return envLines;
 }
 
 async function runSelfTest() {
@@ -363,7 +397,9 @@ export async function runPaymentLeakCheck(options = {}) {
   // Always run self-test to verify parsing and fixture logic
   await runSelfTest();
 
-  const cli = options.argv ? parseCliArgs(options.argv) : { targets: options.targets ?? [], selfTestOnly: false };
+  const cli = options.argv
+    ? parseCliArgs(options.argv)
+    : { targets: options.targets ?? [], selfTestOnly: false };
   if (cli.selfTestOnly) {
     return;
   }

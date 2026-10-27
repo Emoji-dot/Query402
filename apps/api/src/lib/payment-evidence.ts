@@ -322,7 +322,7 @@ function toJsonRecord(value: unknown): Record<string, unknown> | undefined {
 export async function persistPaymentEvidence(
   evidence: PaymentEvidence,
   record?: PaidRequestRecord
-@{
+) {
   assertPriceMatchesProvider(evidence);
   const now = new Date().toISOString();
   const payment: PaymentAttempt = {
