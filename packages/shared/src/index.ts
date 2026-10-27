@@ -1,4 +1,4 @@
-export { buildPaymentLink, type PaymentLinkInput, type PaymentLinkOutput } from './payment-links';
+export { buildPaymentLink, type PaymentLinkInput, type PaymentLinkOutput } from './payment-links.js';
 export {
   networkSchema,
   assetSchema,
@@ -8,4 +8,4 @@ export {
   type Asset,
   type Destination,
   type PaymentLink,
-} from './schemas';
+} from './schemas.js';
