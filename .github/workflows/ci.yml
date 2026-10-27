@@ -108,18 +108,7 @@ jobs:
       - name: Assert no secrets in transcript
         run: |
           echo "Scanning transcript/ for leaked secrets…"
-          LEAKED=0
-          # Stellar secret key: S + 55 uppercase alphanumeric chars
-          grep -rE  'S[A-Z0-9]{55}'                        transcript/ 2>/dev/null && LEAKED=1 || true
-          # Bearer tokens
-          grep -riE 'Bearer [A-Za-z0-9._\-]{20,}'          transcript/ 2>/dev/null && LEAKED=1 || true
-          # Raw payment header values (not presence-flag wording)
-          grep -riE '(x-payment|x402-payment):\s*[A-Za-z0-9]{10,}' \
-                                                            transcript/ 2>/dev/null && LEAKED=1 || true
-          if [[ "$LEAKED" -eq 1 ]]; then
-            echo "FAIL: secret detected in transcript — do not publish."; exit 1
-          fi
-          echo "✓ No secrets detected."
+          node scripts/check-payment-leaks.mjs transcript/
 
       - name: Upload transcript artifact
         uses: actions/upload-artifact@v4
