@@ -1,9 +1,11 @@
-import { readdir, readFile, stat } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, stat, writeFile, mkdir } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const ROOT = process.cwd();
 
-function findLeaks(content, includedLines) {
+export function findLeaks(content, includedLines) {
   const leaks = [];
   const lines = content.split(/\r?\n/);
 
@@ -61,9 +63,9 @@ function findLeaks(content, includedLines) {
       }
     }
 
-    // 5. X-Payment Header or payment-response header
+    // 5. X-Payment / x402-payment Header or payment-response header
     const paymentHeaderRegex =
-      /(?:x-payment|payment-response|x-payment-response)\s*[:=]\s*["']?([a-zA-Z0-9_\-\[\]\+\/=]+)["']?/gi;
+      /(?:x-payment|x402-payment|payment-response|x-payment-response)\s*[:=]\s*["']?([a-zA-Z0-9_\-\[\]\+\/=]+)["']?/gi;
     while ((match = paymentHeaderRegex.exec(line)) !== null) {
       const val = match[1];
       const isRedacted =
@@ -97,6 +99,149 @@ function findLeaks(content, includedLines) {
   return leaks;
 }
 
+export function formatLeakLine(relativePath, leak) {
+  return `  - ${relativePath}:${leak.lineNum}: [${leak.pattern}] (matched value redacted)`;
+}
+
+async function walk(dir) {
+  const entries = await readdir(dir, { withFileTypes: true });
+  const files = [];
+
+  for (const entry of entries) {
+    if (entry.isSymbolicLink()) {
+      continue;
+    }
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name === "node_modules" || entry.name === ".git" || entry.name === "dist") {
+        continue;
+      }
+      files.push(...(await walk(fullPath)));
+      continue;
+    }
+    if (entry.isFile()) {
+      files.push(fullPath);
+    }
+  }
+
+  return files;
+}
+
+export function resolveSafeTargetPath(rawTarget, baseDir = ROOT) {
+  if (typeof rawTarget !== "string" || rawTarget.trim().length === 0) {
+    throw new Error("Target path must be a non-empty string.");
+  }
+  if (rawTarget.includes("\0")) {
+    throw new Error("Invalid target path containing null byte.");
+  }
+  const resolvedBase = path.resolve(baseDir);
+  const resolvedTarget = path.resolve(resolvedBase, rawTarget);
+  const rel = path.relative(resolvedBase, resolvedTarget);
+  if (rel.startsWith("..") || path.isAbsolute(rel)) {
+    throw new Error(`Refusing to scan target outside workspace root: ${rawTarget}`);
+  }
+  return resolvedTarget;
+}
+
+export function parseCliArgs(argv = process.argv.slice(2)) {
+  const targets = [];
+  let selfTestOnly = false;
+
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === "--self-test") {
+      selfTestOnly = true;
+      continue;
+    }
+    if (arg === "--target") {
+      const next = argv[i + 1];
+      if (!next || next.startsWith("--")) {
+        throw new Error("Missing path value after --target.");
+      }
+      targets.push(next);
+      i += 1;
+      continue;
+    }
+    if (arg.startsWith("--target=")) {
+      const value = arg.slice("--target=".length);
+      if (!value) {
+        throw new Error("Missing path value in --target=.");
+      }
+      targets.push(value);
+      continue;
+    }
+    if (arg.startsWith("-")) {
+      throw new Error(`Unknown CLI flag: ${arg}`);
+    }
+    targets.push(arg);
+  }
+
+  return { targets, selfTestOnly };
+}
+
+async function getTargetFiles(targets, baseDir = ROOT) {
+  const files = [];
+
+  for (const rawTarget of targets) {
+    const resolvedTarget = resolveSafeTargetPath(rawTarget, baseDir);
+    let targetStat;
+    try {
+      targetStat = await stat(resolvedTarget);
+    } catch {
+      throw new Error(`Scan target does not exist: ${rawTarget}`);
+    }
+
+    if (targetStat.isDirectory()) {
+      files.push(...(await walk(resolvedTarget)));
+    } else if (targetStat.isFile()) {
+      files.push(resolvedTarget);
+    }
+  }
+
+  return files;
+}
+
+async function getReviewerFacingFiles(baseDir = ROOT) {
+  const files = [];
+
+  try {
+    const docsFiles = await walk(path.join(baseDir, "docs"));
+    files.push(...docsFiles);
+  } catch {
+    // docs folder optional
+  }
+
+  const rootFiles = await readdir(baseDir, { withFileTypes: true });
+  for (const entry of rootFiles) {
+    if (entry.isFile() && entry.name.toLowerCase().endsWith(".md")) {
+      files.push(path.join(baseDir, entry.name));
+    }
+  }
+
+  files.push(path.join(baseDir, ".env.example"));
+  files.push(...(await walk(path.join(baseDir, ".github", "workflows"))));
+
+  return files;
+}
+
+export async function scanFilesForLeaks(files, baseDir = ROOT) {
+  const findings = [];
+
+  for (const file of files) {
+    const content = await readFile(file, "utf8");
+    const relativePath = path.relative(baseDir, file).replaceAll("\\", "/");
+    const includedLines = relativePath.startsWith(".github/workflows/")
+      ? getWorkflowEnvLines(content)
+      : undefined;
+    const leaks = findLeaks(content, includedLines);
+    if (leaks.length > 0) {
+      findings.push({ relativePath, leaks });
+    }
+  }
+
+  return findings;
+}
+
 function getWorkflowEnvLines(content) {
   const lines = content.split(/\r?\n/);
   const envLines = new Set();
@@ -125,7 +270,7 @@ function getWorkflowEnvLines(content) {
   return envLines;
 }
 
-function runSelfTest() {
+async function runSelfTest() {
   const passingCases = [
     "Here is a safe redacted key: [REDACTED_PAYMENT_HEADER]",
     "x-payment-response: [REDACTED]",
@@ -135,6 +280,7 @@ function runSelfTest() {
     "Authorization: Bearer [REDACTED_BEARER_TOKEN]",
     "sponsorship-facilitator-api-key: XXXXXXXX",
     "x-payment: redacted",
+    "x402-payment: [REDACTED]",
     "We have some normal text here with no leaks."
   ];
 
@@ -166,6 +312,10 @@ function runSelfTest() {
     {
       text: "x-payment-response: actual_live_header_blob_123",
       pattern: "X-Payment Header"
+    },
+    {
+      text: "x402-payment: live_x402_payment_secret_token_999",
+      pattern: "X-Payment Header"
     }
   ];
 
@@ -174,7 +324,7 @@ function runSelfTest() {
   for (const pass of passingCases) {
     const leaks = findLeaks(pass);
     if (leaks.length > 0) {
-      console.error("Self-test failed: Expected no leaks in a safe sample, but found:", leaks);
+      console.error(`Self-test failed: Expected no leaks in "${pass}", but found:`, leaks.length);
       process.exit(1);
     }
   }
@@ -182,105 +332,104 @@ function runSelfTest() {
   for (const fail of failingCases) {
     const leaks = findLeaks(fail.text);
     if (leaks.length === 0) {
-      console.error(
-        `Self-test failed: Expected leak for pattern "${fail.pattern}", but none found.`
-      );
+      console.error(`Self-test failed: Expected leak for pattern "${fail.pattern}", but none found.`);
       process.exit(1);
     }
-    const hasPattern = leaks.some((l) => l.pattern === fail.pattern);
-    if (!hasPattern) {
-      console.error(
-        `Self-test failed: Expected leak of type "${fail.pattern}", but found a different type:`,
-        leaks
-      );
+    const matchedLeak = leaks.find((l) => l.pattern === fail.pattern);
+    if (!matchedLeak) {
+      console.error(`Self-test failed: Expected leak of type "${fail.pattern}".`);
       process.exit(1);
     }
+    const formatted = formatLeakLine("transcript/sample.txt", matchedLeak);
+    if (formatted.includes(matchedLeak.match)) {
+      console.error("Self-test failed: Formatted failure line leaked raw secret value.");
+      process.exit(1);
+    }
+  }
+
+  // Temporary transcript directory fixture test
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "query402-leak-test-"));
+  try {
+    const transcriptDir = path.join(tempRoot, "transcript");
+    await mkdir(transcriptDir, { recursive: true });
+
+    const cleanFile = path.join(transcriptDir, "clean-transcript.md");
+    await writeFile(
+      cleanFile,
+      "# Demo Transcript\nx-payment: [REDACTED]\nAuthorization: Bearer [REDACTED_BEARER_TOKEN]\n",
+      "utf8"
+    );
+
+    const cleanFiles = await getTargetFiles(["transcript"], tempRoot);
+    const cleanFindings = await scanFilesForLeaks(cleanFiles, tempRoot);
+    if (cleanFindings.length !== 0) {
+      console.error("Self-test failed: Expected 0 findings in clean temporary transcript fixture.");
+      process.exit(1);
+    }
+
+    const leakedSecret = "SBU4V2PLOHV6J3Z3W2N3M3K3L3J3H3G3F3E3D3C3B3A3938373635343";
+    const leakedFile = path.join(transcriptDir, "leaked-transcript.log");
+    await writeFile(leakedFile, `line 1 ok\nsecret=${leakedSecret}\n`, "utf8");
+
+    const allFiles = await getTargetFiles(["transcript"], tempRoot);
+    const findings = await scanFilesForLeaks(allFiles, tempRoot);
+    if (findings.length !== 1 || findings[0].relativePath !== "transcript/leaked-transcript.log") {
+      console.error("Self-test failed: Expected leak finding in transcript/leaked-transcript.log.");
+      process.exit(1);
+    }
+    const reportLine = formatLeakLine(findings[0].relativePath, findings[0].leaks[0]);
+    if (
+      !reportLine.includes("transcript/leaked-transcript.log:2") ||
+      !reportLine.includes("[Stellar Secret Key]") ||
+      reportLine.includes(leakedSecret)
+    ) {
+      console.error("Self-test failed: Failure report line did not redact matched value properly.");
+      process.exit(1);
+    }
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
   }
 
   console.log("Self-test passed successfully!");
 }
 
-async function walk(dir) {
-  const entries = await readdir(dir, { withFileTypes: true });
-  const files = [];
+export async function runPaymentLeakCheck(options = {}) {
+  // Always run self-test to verify parsing and fixture logic
+  await runSelfTest();
 
-  for (const entry of entries) {
-    const fullPath = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      if (entry.name === "node_modules" || entry.name === ".git" || entry.name === "dist") {
-        continue;
-      }
-      files.push(...(await walk(fullPath)));
-      continue;
-    }
-    files.push(fullPath);
-  }
-
-  return files;
-}
-
-async function getReviewerFacingFiles() {
-  const files = [];
-
-  try {
-    const docsFiles = await walk(path.join(ROOT, "docs"));
-    files.push(...docsFiles);
-  } catch (error) {
-    // docs folder optional
-  }
-
-  const rootFiles = await readdir(ROOT, { withFileTypes: true });
-  for (const entry of rootFiles) {
-    if (entry.isFile() && entry.name.toLowerCase().endsWith(".md")) {
-      files.push(path.join(ROOT, entry.name));
-    }
-  }
-
-  files.push(path.join(ROOT, ".env.example"));
-  files.push(...(await walk(path.join(ROOT, ".github", "workflows"))));
-
-  return files;
-}
-
-export async function runPaymentLeakCheck() {
-  // Always run self-test to verify parsing logic
-  runSelfTest();
-
-  if (process.argv.includes("--self-test")) {
+  const cli = options.argv
+    ? parseCliArgs(options.argv)
+    : { targets: options.targets ?? [], selfTestOnly: false };
+  if (cli.selfTestOnly) {
     return;
   }
 
-  const files = await getReviewerFacingFiles();
-  let hasFailures = false;
+  const baseDir = options.baseDir ?? ROOT;
+  const targets = options.targets ?? cli.targets;
+  const files =
+    targets && targets.length > 0
+      ? await getTargetFiles(targets, baseDir)
+      : await getReviewerFacingFiles(baseDir);
 
-  for (const file of files) {
-    const content = await readFile(file, "utf8");
-    const relativePath = path.relative(ROOT, file).replaceAll("\\", "/");
-    const includedLines = relativePath.startsWith(".github/workflows/")
-      ? getWorkflowEnvLines(content)
-      : undefined;
-    const leaks = findLeaks(content, includedLines);
+  const findings = await scanFilesForLeaks(files, baseDir);
 
-    if (leaks.length > 0) {
-      console.error(`Leak detected in reviewer-facing file: ${relativePath}`);
-      for (const leak of leaks) {
-        console.error(`  - Line ${leak.lineNum}: [${leak.pattern}]`);
+  if (findings.length > 0) {
+    for (const finding of findings) {
+      console.error(`Leak detected in file: ${finding.relativePath}`);
+      for (const leak of finding.leaks) {
+        console.error(formatLeakLine(finding.relativePath, leak));
       }
-      hasFailures = true;
     }
-  }
-
-  if (hasFailures) {
     throw new Error("Payment leaks validation failed.");
   }
 
-  console.log("No payment leaks found in reviewer-facing artifacts.");
+  console.log("No payment leaks found in scanned artifacts.");
 }
 
-import { fileURLToPath } from "node:url";
 const isMain = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
 if (isMain) {
-  runPaymentLeakCheck().catch((err) => {
+  const cli = parseCliArgs(process.argv.slice(2));
+  runPaymentLeakCheck({ targets: cli.targets, argv: process.argv.slice(2) }).catch((err) => {
     console.error(err.message);
     process.exit(1);
   });
