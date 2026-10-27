@@ -30,6 +30,12 @@ loadEnv();
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT_API: z.coerce.number().default(3001),
+  // 64 KiB. Passed to express.json as a byte limit (inclusive).
+  API_JSON_BODY_MAX_BYTES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(64 * 1024),
   STELLAR_NETWORK: z.string().default("stellar:testnet"),
   STELLAR_RPC_URL: z.string().url().default("https://soroban-testnet.stellar.org"),
   X402_FACILITATOR_URL: z.string().url().default("https://channels.openzeppelin.com/x402/testnet"),

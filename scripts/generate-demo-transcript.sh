@@ -61,15 +61,7 @@ DEMO_MODE=true API_BASE_URL="$API_BASE" \
   npm run demo:transcript --workspace @query402/agent-client
 
 yellow "  Scanning for accidental secrets…"
-LEAKED=0
-grep -rE  'S[A-Z0-9]{55}' transcript/ 2>/dev/null                          && LEAKED=1 || true
-grep -riE 'Bearer [A-Za-z0-9._\-]{20,}' transcript/ 2>/dev/null           && LEAKED=1 || true
-grep -riE '(x-payment):\s*[A-Za-z0-9]{10,}' transcript/ 2>/dev/null      && LEAKED=1 || true
-
-if [[ "$LEAKED" -eq 1 ]]; then
-  red "  ✗ Secret detected — do NOT share this transcript."
-  exit 1
-fi
+node scripts/check-payment-leaks.mjs transcript/
 
 green "  ✓ No secrets detected."
 echo  ""

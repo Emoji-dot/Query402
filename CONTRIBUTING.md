@@ -7,7 +7,9 @@ opening a pull request.
 ## Prerequisites
 
 - Node.js `24.14.1`, matching [`.nvmrc`](./.nvmrc)
-- npm (the version bundled with Node.js)
+- npm `11.11.0`, bundled with Node.js `24.14.1` and pinned in
+  [`package.json`](./package.json) (`packageManager: "npm@11.11.0"`,
+  `engines.npm: ">=11.0.0 <12.0.0"`)
 
 With `nvm`, select the repository's Node version before installing dependencies:
 
@@ -15,17 +17,26 @@ With `nvm`, select the repository's Node version before installing dependencies:
 nvm install
 nvm use
 node --version
+npm --version
 ```
 
-The last command should report `v24.14.1`.
+The version checks should report `v24.14.1` for Node.js and `11.11.0` (npm
+major `11`) for npm.
 
 ## First-time setup
 
 From the repository root, install the locked dependency versions:
 
 ```bash
+npm run check:lock-sources
 npm ci
 ```
+
+The lockfile source check allows HTTPS packages from `registry.npmjs.org` and
+the empty host allowlist in `scripts/check-lock-sources.mjs`. To add an
+exceptional host, review and add its hostname to `ALLOWLISTED_HOSTS` there.
+The check reads JSON only and reports package paths and source categories, not
+source URLs or credentials.
 
 The API reads local configuration from `.env`. The checked-in
 `.env.example` contains placeholders and enables deterministic `DEMO_MODE`; it

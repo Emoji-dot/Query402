@@ -3,7 +3,7 @@
 > repository is the canonical workspace for Wave issues and contributions.
 
 <div align="center">
-  <img src="./public/Query402-logo.png" alt="Query402 logo" width="180" />
+  <img src="./public/Query402-logo.webp" alt="Query402 logo" width="180" />
   <h1>Query402</h1>
   <p><strong>Agentic pay-per-query internet access on Stellar with x402.</strong></p>
 
@@ -20,6 +20,7 @@ Query402 is a hackathon-ready marketplace-style router where agents can buy `sea
 
 - `x402` provides payment-required API patterns for paid HTTP routes.
 - `stellar:testnet` provides low-friction testing with programmable token payments.
+
 - Facilitator-based verification/settlement patterns are represented in the backend integration.
 
 ## Features (Phase 1–4)
@@ -160,7 +161,10 @@ npm run test
 npm run lint
 npm run format:check
 npm run check:source-artifacts
+node scripts/check-static-assets.mjs
 ```
+
+Static files under the root `public/` directory and each `apps/*/public/` directory have a per-file budget of 1 MB (1,048,576 bytes). CI runs `node scripts/check-static-assets.mjs` before `npm ci` or `pnpm install`. The checker only reads file bytes. It validates PNG, JPEG, WebP, WOFF, and WOFF2 magic bytes against the file extension and prints the path, detected type, and byte size. Two existing logos are on a temporary size allowlist in `scripts/check-static-assets.mjs` until they are shrunk; any other file over 1 MB fails.
 
 Use `npm run clean` before quality gates when you want to remove local build output (`dist`), test coverage (`coverage`), and API runtime data under `apps/api/data`.
 
