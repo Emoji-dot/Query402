@@ -34,6 +34,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Build the workspaces before testing: packages that consume @query402/shared
+      # (e.g. agent-client) resolve it through its "exports" map to dist/index.js,
+      # which is gitignored and only exists after a build.
+      - name: Build
+        run: npm run build
+
       - name: Lint
         run: npm run lint
 
