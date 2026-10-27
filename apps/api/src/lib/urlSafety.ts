@@ -84,7 +84,7 @@ export function validateUrl(raw: string): UrlPolicyResult {
   try {
     const url = new URL(raw);
 
-    if (!["http:", "https::"].includes(url.protocol)) {
+    if (!["http:", "https:"].includes(url.protocol)) {
       return { safe: false, sanitizedUrl: "", error: "Only HTTP/HTTPS protocols are allowed" };
     }
 
