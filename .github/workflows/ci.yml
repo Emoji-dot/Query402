@@ -46,6 +46,9 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
 
+      - name: Check dependency sources
+        run: node scripts/check-lock-sources.mjs
+
       - name: Check install lifecycle scripts
         run: node scripts/check-install-lifecycle.mjs
 
@@ -104,6 +107,9 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
+
+      - name: Check dependency sources
+        run: node scripts/check-lock-sources.mjs
 
       - name: Check install lifecycle scripts
         run: node scripts/check-install-lifecycle.mjs
